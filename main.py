@@ -14,20 +14,26 @@ class K8sResource:
 
     def read(self):
         try:
-            api_class, method_name = self.api_method_map[self.api_instance]
+            api_method_map = {
+                "configmaps": (client.CoreV1Api, "read_namespaced_config_map"),
+                "secrets": (client.CoreV1Api, "read_namespaced_secret"),
+                "services": (client.CoreV1Api, "read_namespaced_service"),
+                "ingresses": (client.NetworkingV1Api, "read_namespaced_ingress"),
+                "deployments": (client.AppsV1Api, "read_namespaced_deployment"),
+            }
+
+            if self.api_instance not in api_method_map:
+                abort(404)
+
+            api_class, method_name = api_method_map[self.api_instance]
             api_instance = api_class()
             resource = getattr(api_instance, method_name)(self.name, self.namespace)
-            return self.process_resource(resource)
-
+            return resource
         except ApiException as e:
             if e.status == 404:
                 abort(404)
             else:
                 raise
-
-    def process_resource(self, resource):
-        resource_dict = resource.to_dict()
-        return resource_dict.get('metadata', {})
 
     def update_deployment_image(self, image):
         if self.api_instance != "deployments":
@@ -64,7 +70,6 @@ class K8sResource:
         except ApiException as e:
             abort(e.status)
 
-
 class ConfigMap(K8sResource):
     def __init__(self, name, namespace):
         super().__init__(name, "configmaps", namespace)
@@ -80,32 +85,12 @@ class Service(K8sResource):
         super().__init__(name, "services", namespace)
 
 
-class Deployment(K8sResource):
-    def __init__(self, name, api, namespace):
-        super().__init__(name, api, namespace, "deployments")
-
-    def process_resource(self, resource):
-        resource_dict = resource.to_dict()
-        metadata = resource_dict.get('metadata', {})
-        status = resource_dict.get('status', {})
-        replicas = status.get('replicas', None)
-        containers = resource_dict.get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
-        images = [{"name": container.get("name"), "image": container.get("image")} for container in containers]
-        resources = [{"name": container.get("name"),
-                      "resources": container.get("resources", {})} for container in containers]
-
-        # Create a new dictionary containing the required information
-        result = {
-            "metadata": metadata,
-            "status": status,
-            "replicas": replicas,
-            "images": images,
-            "resources": resources
-        }
-        return result
-
-
 class Ingress(K8sResource):
+    def __init__(self, name, namespace):
+        super().__init__(name, "ingresses", namespace)
+
+
+class Deployment(K8sResource):
     def __init__(self, name, namespace):
         super().__init__(name, "deployments", namespace)
 
